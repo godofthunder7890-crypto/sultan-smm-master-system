@@ -522,11 +522,12 @@ async def process_ai_credits_amount(message: Message, state: FSMContext):
 # ── APK CHANNEL MANAGEMENT ────────────────────────────────────────────────────
 
 @admin_router.callback_query(F.data == "admin_apk_channels")
-async def cb_admin_apk_channels(cb: CallbackQuery, state: FSMContext):
+async def cb_admin_apk_channels(cb: CallbackQuery, state: FSMContext = None):
     if not is_admin(cb.from_user.id):
         await cb.answer("🚫 Unauthorized.", show_alert=True)
         return
-    await state.clear()
+    if state is not None:
+        await state.clear()
     channels = await db.get_source_channels()
     from aiogram.types import InlineKeyboardButton
     from aiogram.utils.keyboard import InlineKeyboardBuilder
