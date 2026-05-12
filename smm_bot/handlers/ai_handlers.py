@@ -9,6 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from database_manager import db
 from ai_handler import MODELS, ask_ai
+from ui_templates import ask_mode_kb
 
 ai_router = Router()
 
@@ -47,6 +48,49 @@ def ai_chat_kb(model_key: str) -> InlineKeyboardBuilder:
 
 
 # ── /AI COMMAND ───────────────────────────────────────────────────────────────
+
+@ai_router.message(Command("ask"))
+async def cmd_ask(message: Message, state: FSMContext):
+    """Instant AI — auto picks Groq for text, Gemini for images. No menu."""
+    await state.clear()
+    credits = await db.get_ai_credits(message.from_user.id)
+    await state.set_state(AIState.chatting)
+    await state.update_data(ai_model="groq", ai_history=[], ask_mode=True)
+    await message.answer(
+        f"⚡ <b>SULTAN AI — Instant Mode</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"💬 <b>Credits:</b> <code>{credits}</code>\n\n"
+        f"🤖 <b>Auto-picks best model:</b>\n"
+        f"   ⚡ Text → Groq (ultra-fast)\n"
+        f"   📸 Photo → Gemini Vision\n\n"
+        f"<b>Just send your message or photo now!</b>\n\n"
+        f"<i>Use /ai for full model selection.</i>",
+        parse_mode="HTML",
+        reply_markup=ask_mode_kb(),
+    )
+
+
+@ai_router.callback_query(F.data == "ai_ask")
+async def cb_ai_ask(cb: CallbackQuery, state: FSMContext):
+    """Main menu 🤖 Sultan AI button — direct instant mode, no model menu."""
+    await state.clear()
+    credits = await db.get_ai_credits(cb.from_user.id)
+    await state.set_state(AIState.chatting)
+    await state.update_data(ai_model="groq", ai_history=[], ask_mode=True)
+    await cb.message.edit_text(
+        f"⚡ <b>SULTAN AI — Instant Mode</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"💬 <b>Credits:</b> <code>{credits}</code>\n\n"
+        f"🤖 <b>Auto-picks best model:</b>\n"
+        f"   ⚡ Text → Groq (ultra-fast)\n"
+        f"   📸 Photo → Gemini Vision\n\n"
+        f"<b>Send your message or photo now!</b>\n\n"
+        f"<i>Use /ai for full model selection.</i>",
+        parse_mode="HTML",
+        reply_markup=ask_mode_kb(),
+    )
+    await cb.answer("⚡ Sultan AI ready!")
+
 
 @ai_router.message(Command("ai"))
 async def cmd_ai(message: Message, state: FSMContext):
@@ -188,6 +232,11 @@ async def _process_ai_message(
     user_id = message.from_user.id
     data = await state.get_data()
     model_key = data.get("ai_model", "groq")
+    ask_mode = data.get("ask_mode", False)
+    # Auto-pick in ask_mode: Groq for text, Gemini for images
+    if ask_mode:
+        model_key = "gemini" if image_bytes else "groq"
+        await state.update_data(ai_model=model_key)
     history = data.get("ai_history", [])
     is_image = image_bytes is not None
     cost = AI_CREDIT_IMAGE_COST if is_image else AI_CREDIT_TEXT_COST
@@ -239,15 +288,16 @@ async def _process_ai_message(
             )
 
         await thinking_msg.delete()
+        hint = "tap a button below" if ask_mode else "/ai to switch model"
         await message.answer(
             f"{effective_cfg['emoji']} <b>{effective_cfg['display']}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"{response}"
             f"{vision_note}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"<i>💬 {new_credits} credits remaining • /ai to switch model</i>",
+            f"<i>💬 {new_credits} credits remaining • {hint}</i>",
             parse_mode="HTML",
-            reply_markup=ai_chat_kb(model_key),
+            reply_markup=ask_mode_kb() if ask_mode else ai_chat_kb(model_key),
         )
 
     except Exception as e:
@@ -258,7 +308,7 @@ async def _process_ai_message(
             f"Something went wrong. Please try again.\n"
             f"<code>{type(e).__name__}: {str(e)[:100]}</code>",
             parse_mode="HTML",
-            reply_markup=ai_chat_kb(model_key),
+            reply_markup=ask_mode_kb() if ask_mode else ai_chat_kb(model_key),
         )
 
 
