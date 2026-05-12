@@ -243,6 +243,10 @@ def admin_menu_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="💳 Pending Deposits", callback_data="admin_pending_deposits"),
         InlineKeyboardButton(text="🚫 Ban User", callback_data="admin_ban_user"),
     )
+    builder.row(
+        InlineKeyboardButton(text="🤖 AI Stats", callback_data="admin_ai_stats"),
+        InlineKeyboardButton(text="💬 Add AI Credits", callback_data="admin_ai_credits"),
+    )
     return builder.as_markup()
 
 
