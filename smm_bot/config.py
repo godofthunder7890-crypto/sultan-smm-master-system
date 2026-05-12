@@ -59,3 +59,13 @@ MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 
 # AI credit defaults
 AI_FREE_CREDITS = 30
+
+# ── APK LEECHER ───────────────────────────────────────────────────────────────
+_target_raw = os.environ.get("TARGET_CHANNEL_ID", "")
+TARGET_CHANNEL_ID = int(_target_raw) if _target_raw.lstrip("-").isdigit() else (_target_raw or None)
+BOT_USERNAME = os.environ.get("BOT_USERNAME", "SultanSMMBot")
+
+# ── PRICE MULTIPLIER ──────────────────────────────────────────────────────────
+# Provider rate × PRICE_MULTIPLIER = what users pay.
+# Default 5x: if provider charges $1, bot sells at $5.
+PRICE_MULTIPLIER = float(os.environ.get("PRICE_MULTIPLIER", "5.0"))
