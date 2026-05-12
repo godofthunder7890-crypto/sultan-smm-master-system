@@ -8,14 +8,15 @@ def welcome_message(user_name: str, balance: float, total_orders: int) -> str:
     return (
         f"🏛️ <b>SULTAN CENTRAL COMMAND</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"👑 <b>Welcome, {user_name}</b>\n\n"
-        f"💎 <b>Wallet:</b> <code>₹{balance:.2f}</code>  "
+        f"👑 <b>Welcome, {user_name}!</b>\n\n"
+        f"💎 <b>Balance:</b> <code>₹{balance:.2f}</code>  "
         f"📦 <b>Orders:</b> <code>{total_orders}</code>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🛍️ <b>New Order</b> — browse 6,000+ SMM services\n"
-        f"🤖 <b>AI Assistant</b> — Groq • Gemini • Claude • Mistral\n"
-        f"💎 <b>Wallet</b> — deposit via UPI, track spending\n\n"
-        f"<i>Your gateway to premium social growth.</i>"
+        f"🚀 <b>SMM Services</b> — 6,000+ Instagram, YouTube, TikTok\n"
+        f"🤖 <b>Sultan AI</b> — Groq • Gemini • Claude • Mistral\n"
+        f"📥 <b>Premium APKs</b> — Latest mods auto-posted daily\n"
+        f"💰 <b>My Wallet</b> — Deposit via UPI instantly\n\n"
+        f"<i>⚡ Just tap a button — no typing needed!</i>"
     )
 
 
@@ -124,20 +125,63 @@ def status_update_notification(order_id: int, old_status: str, new_status: str) 
 def main_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🛍️ New Order", callback_data="new_order"),
+        InlineKeyboardButton(text="🚀 SMM Services", callback_data="new_order"),
+        InlineKeyboardButton(text="🤖 Sultan AI", callback_data="ai_ask"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="📥 Premium APKs", callback_data="apk_browse"),
+        InlineKeyboardButton(text="💰 My Wallet", callback_data="wallet"),
+    )
+    builder.row(
         InlineKeyboardButton(text="📦 My Orders", callback_data="my_orders"),
-    )
-    builder.row(
-        InlineKeyboardButton(text="💎 Wallet", callback_data="wallet"),
-        InlineKeyboardButton(text="⚡ Services", callback_data="services"),
-    )
-    builder.row(
-        InlineKeyboardButton(text="🤖 AI Assistant", callback_data="ai_menu"),
-        InlineKeyboardButton(text="📊 Check Order", callback_data="check_order"),
+        InlineKeyboardButton(text="📊 Track Order", callback_data="check_order"),
     )
     builder.row(
         InlineKeyboardButton(text="🆘 Support", callback_data="support"),
-        InlineKeyboardButton(text="📢 Our Channel", callback_data="our_channel"),
+        InlineKeyboardButton(text="📢 Channel", callback_data="our_channel"),
+    )
+    return builder.as_markup()
+
+
+def ask_mode_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🗑️ Clear Chat", callback_data="ai_clear"),
+        InlineKeyboardButton(text="📊 Credits", callback_data="ai_usage"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔧 Switch Model", callback_data="ai_switch"),
+        InlineKeyboardButton(text="🚪 Exit AI", callback_data="ai_exit"),
+    )
+    return builder.as_markup()
+
+
+def apk_browse_kb(apks: list) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if apks:
+        for apk in apks[:8]:
+            name = (apk.get("sultan_filename") or "Sultan_Premium.apk")[:28]
+            size_mb = (apk.get("file_size") or 0) / 1024 / 1024
+            builder.row(InlineKeyboardButton(
+                text=f"📦 {name} ({size_mb:.1f}MB)",
+                callback_data=f"apk_detail:{apk['id']}",
+            ))
+    else:
+        builder.row(InlineKeyboardButton(
+            text="📭 No APKs leeched yet", callback_data="main_menu"
+        ))
+    builder.row(InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu"))
+    return builder.as_markup()
+
+
+def order_detail_check_kb(order_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="🔄 Check Live Status", callback_data=f"live_status:{order_id}"
+    ))
+    builder.row(
+        InlineKeyboardButton(text="🔙 My Orders", callback_data="my_orders"),
+        InlineKeyboardButton(text="🏠 Home", callback_data="main_menu"),
     )
     return builder.as_markup()
 
