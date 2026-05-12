@@ -14,7 +14,7 @@ from ui_templates import (
     providers_kb, categories_kb, services_kb, service_detail_kb,
     orders_kb, back_to_main_kb, back_kb, confirm_kb
 )
-from config import UPI_ID, MIN_DEPOSIT, MAX_DEPOSIT
+from config import UPI_ID, MIN_DEPOSIT, MAX_DEPOSIT, PRICE_MULTIPLIER, TARGET_CHANNEL_ID, BOT_USERNAME
 
 user_router = Router()
 
@@ -256,20 +256,21 @@ async def cb_service_detail(cb: CallbackQuery, state: FSMContext):
     if not svc:
         await cb.answer("Service not found.", show_alert=True)
         return
+    base_rate = float(svc.get("rate", 0))
+    sell_rate = round(base_rate * PRICE_MULTIPLIER, 4)
     await state.update_data(
         order_provider=provider,
         order_service_id=service_id,
         order_service_name=svc.get("name", "Service"),
         order_min=svc.get("min_order", 10),
         order_max=svc.get("max_order", 10000),
-        order_rate=float(svc.get("rate", 0)),
+        order_rate=sell_rate,
     )
-    rate_inr = float(svc.get("rate", 0))
     await cb.message.edit_text(
         f"⚡ <b>SERVICE DETAILS</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📦 <b>{svc.get('name', 'Service')}</b>\n\n"
-        f"💰 <b>Rate:</b> <code>₹{rate_inr:.4f} per 1000</code>\n"
+        f"💰 <b>Rate:</b> <code>₹{sell_rate:.4f} per 1000</code>\n"
         f"📊 <b>Min:</b> <code>{svc.get('min_order', 10):,}</code>\n"
         f"📊 <b>Max:</b> <code>{svc.get('max_order', 10000):,}</code>\n"
         f"🌐 <b>Provider:</b> <code>{provider.upper()}</code>\n\n"
@@ -498,5 +499,31 @@ async def cb_support(cb: CallbackQuery):
         f"🆔 <b>Your User ID:</b> <code>{cb.from_user.id}</code>",
         parse_mode="HTML",
         reply_markup=back_to_main_kb(),
+    )
+    await cb.answer()
+
+
+@user_router.callback_query(F.data == "our_channel")
+async def cb_our_channel(cb: CallbackQuery):
+    from aiogram.types import InlineKeyboardButton
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    if TARGET_CHANNEL_ID:
+        channel_link = (
+            f"https://t.me/c/{str(TARGET_CHANNEL_ID).lstrip('-100')}"
+            if str(TARGET_CHANNEL_ID).startswith("-100")
+            else f"https://t.me/{TARGET_CHANNEL_ID}"
+        )
+        builder.row(InlineKeyboardButton(text="📢 Join Our Channel", url=channel_link))
+    builder.row(InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu"))
+    await cb.message.edit_text(
+        "📢 <b>OUR CHANNEL</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "🏛️ <b>Sultan SMM — Premium APKs & Tools</b>\n\n"
+        "Get exclusive premium APKs, SMM tools, and\n"
+        "the latest growth hacks — all for FREE!\n\n"
+        "⚡ Click below to join the channel.",
+        parse_mode="HTML",
+        reply_markup=builder.as_markup(),
     )
     await cb.answer()
