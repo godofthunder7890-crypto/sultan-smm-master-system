@@ -24,6 +24,8 @@ class AdminState(StatesGroup):
     user_lookup_id = State()
     ban_user_id = State()
     approve_deposit_id = State()
+    ai_credits_user_id = State()
+    ai_credits_amount = State()
 
 
 # ── ADMIN GUARD ───────────────────────────────────────────────────────────────
@@ -405,3 +407,111 @@ async def cb_approve_deposit(cb: CallbackQuery):
         await cb_pending_deposits(cb)
     else:
         await cb.answer("❌ Approval failed.", show_alert=True)
+
+
+# ── AI STATS ──────────────────────────────────────────────────────────────────
+
+@admin_router.callback_query(F.data == "admin_ai_stats")
+async def cb_admin_ai_stats(cb: CallbackQuery):
+    if not is_admin(cb.from_user.id):
+        await cb.answer("🚫 Unauthorized.", show_alert=True)
+        return
+    await cb.answer("⏳ Loading AI stats...")
+    stats = await db.get_ai_global_stats()
+    await cb.message.edit_text(
+        f"🤖 <b>AI USAGE STATISTICS</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"💬 <b>Total AI Messages:</b> <code>{stats.get('total_ai_messages', 0)}</code>\n"
+        f"👥 <b>AI Users:</b> <code>{stats.get('ai_users', 0)}</code>\n"
+        f"📸 <b>Images Analyzed:</b> <code>{stats.get('total_images', 0)}</code>\n\n"
+        f"<b>Models Available:</b>\n"
+        f"   ⚡ Groq LLaMA 3.3 70B — Ultra Fast\n"
+        f"   ✨ Gemini 2.0 Flash — Vision + Speed\n"
+        f"   🤖 Claude 3.5 Haiku — Smart & Nuanced\n"
+        f"   🌬️ Mistral Large — Deep Reasoning\n\n"
+        f"<i>Credits: 30 free per user • 1/message • 2/image</i>",
+        parse_mode="HTML",
+        reply_markup=admin_menu_kb(),
+    )
+
+
+# ── ADD AI CREDITS ────────────────────────────────────────────────────────────
+
+@admin_router.callback_query(F.data == "admin_ai_credits")
+async def cb_admin_ai_credits(cb: CallbackQuery, state: FSMContext):
+    if not is_admin(cb.from_user.id):
+        await cb.answer("🚫 Unauthorized.", show_alert=True)
+        return
+    await state.set_state(AdminState.ai_credits_user_id)
+    await cb.message.edit_text(
+        "💬 <b>ADD AI CREDITS</b>\n\n"
+        "Enter the <b>Telegram User ID</b> to credit AI tokens:",
+        parse_mode="HTML",
+        reply_markup=back_kb("admin_analytics"),
+    )
+    await cb.answer()
+
+
+@admin_router.message(AdminState.ai_credits_user_id)
+async def process_ai_credits_user(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        uid = int(message.text.strip())
+    except ValueError:
+        await message.answer("⚠️ Invalid User ID. Enter a numeric Telegram ID.")
+        return
+    user = await db.get_user(uid)
+    if not user:
+        await message.answer(f"❌ User <code>{uid}</code> not found.", parse_mode="HTML")
+        await state.clear()
+        return
+    current_credits = await db.get_ai_credits(uid)
+    await state.update_data(ai_credits_user_id=uid, ai_user_name=user.get("full_name", str(uid)))
+    await state.set_state(AdminState.ai_credits_amount)
+    await message.answer(
+        f"✅ User found: <b>{user.get('full_name')}</b>\n"
+        f"Current AI credits: <code>{current_credits}</code>\n\n"
+        f"Enter amount of AI credits to add:",
+        parse_mode="HTML",
+    )
+
+
+@admin_router.message(AdminState.ai_credits_amount)
+async def process_ai_credits_amount(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        amount = int(message.text.strip().replace(",", ""))
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("⚠️ Enter a valid positive integer.")
+        return
+    data = await state.get_data()
+    uid = data.get("ai_credits_user_id")
+    uname = data.get("ai_user_name", str(uid))
+    ok = await db.add_ai_credits(uid, amount)
+    await state.clear()
+    if ok:
+        new_credits = await db.get_ai_credits(uid)
+        await message.answer(
+            f"✅ <b>AI Credits Added</b>\n\n"
+            f"👤 User: <b>{uname}</b> (<code>{uid}</code>)\n"
+            f"➕ Added: <code>{amount}</code> credits\n"
+            f"💬 New Total: <code>{new_credits}</code> credits",
+            parse_mode="HTML",
+            reply_markup=admin_menu_kb(),
+        )
+        try:
+            await message.bot.send_message(
+                uid,
+                f"🤖 <b>AI CREDITS ADDED</b>\n\n"
+                f"<code>{amount}</code> AI credits have been added to your account!\n"
+                f"Use /ai to start chatting with AI models.",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+    else:
+        await message.answer("❌ Failed to add AI credits.", reply_markup=admin_menu_kb())
