@@ -8,10 +8,13 @@ def welcome_message(user_name: str, balance: float, total_orders: int) -> str:
     return (
         f"🏛️ <b>SULTAN CENTRAL COMMAND</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"👑 <b>Welcome back, {user_name}</b>\n\n"
-        f"💎 <b>Wallet Balance:</b> <code>₹{balance:.2f}</code>\n"
-        f"📦 <b>Total Orders:</b> <code>{total_orders}</code>\n\n"
+        f"👑 <b>Welcome, {user_name}</b>\n\n"
+        f"💎 <b>Wallet:</b> <code>₹{balance:.2f}</code>  "
+        f"📦 <b>Orders:</b> <code>{total_orders}</code>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🛍️ <b>New Order</b> — browse 6,000+ SMM services\n"
+        f"🤖 <b>AI Assistant</b> — Groq • Gemini • Claude • Mistral\n"
+        f"💎 <b>Wallet</b> — deposit via UPI, track spending\n\n"
         f"<i>Your gateway to premium social growth.</i>"
     )
 
@@ -129,8 +132,12 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="⚡ Services", callback_data="services"),
     )
     builder.row(
+        InlineKeyboardButton(text="🤖 AI Assistant", callback_data="ai_menu"),
         InlineKeyboardButton(text="📊 Check Order", callback_data="check_order"),
+    )
+    builder.row(
         InlineKeyboardButton(text="🆘 Support", callback_data="support"),
+        InlineKeyboardButton(text="📢 Our Channel", callback_data="our_channel"),
     )
     return builder.as_markup()
 
@@ -246,6 +253,10 @@ def admin_menu_kb() -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="🤖 AI Stats", callback_data="admin_ai_stats"),
         InlineKeyboardButton(text="💬 Add AI Credits", callback_data="admin_ai_credits"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="📱 APK Channels", callback_data="admin_apk_channels"),
+        InlineKeyboardButton(text="📊 Leech Stats", callback_data="admin_leech_stats"),
     )
     return builder.as_markup()
 
