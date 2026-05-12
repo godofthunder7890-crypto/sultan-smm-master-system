@@ -16,6 +16,7 @@ from database_manager import db
 from handlers.user_handlers import user_router
 from handlers.admin_handlers import admin_router
 from handlers.ai_handlers import ai_router
+from scraper import scraper_router
 from scheduler import start_scheduler
 from keep_alive import keep_alive
 
@@ -73,6 +74,7 @@ async def on_shutdown(bot: Bot):
 def build_dispatcher() -> Dispatcher:
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
+    dp.include_router(scraper_router)
     dp.include_router(admin_router)
     dp.include_router(ai_router)
     dp.include_router(user_router)
@@ -108,7 +110,7 @@ async def polling_loop():
             dp = build_dispatcher()
             await dp.start_polling(
                 bot,
-                allowed_updates=["message", "callback_query"],
+                allowed_updates=["message", "callback_query", "channel_post"],
                 close_bot_session=True,
             )
             # If polling exits cleanly, reset counters
