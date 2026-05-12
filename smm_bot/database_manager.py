@@ -726,6 +726,21 @@ class DatabaseManager:
             logger.error(f"get_leech_stats error: {e}")
             return {}
 
+    async def get_recent_leeched(self, limit: int = 10) -> list:
+        pool = await get_pool()
+        if not pool:
+            return []
+        try:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT * FROM apk_leeched ORDER BY created_at DESC LIMIT $1",
+                    limit,
+                )
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"get_recent_leeched error: {e}")
+            return []
+
     async def get_ai_global_stats(self) -> dict:
         pool = await get_pool()
         if not pool:
