@@ -6,3 +6,8 @@ apscheduler==3.10.4
 python-dotenv==1.0.1
 loguru==0.7.3
 pydantic==2.10.4
+asyncpg
+psutil
+groq
+google-generativeai
+anthropic
