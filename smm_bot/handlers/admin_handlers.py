@@ -26,6 +26,8 @@ class AdminState(StatesGroup):
     approve_deposit_id = State()
     ai_credits_user_id = State()
     ai_credits_amount = State()
+    add_apk_channel = State()
+    set_target_channel = State()
 
 
 # ── ADMIN GUARD ───────────────────────────────────────────────────────────────
@@ -515,3 +517,190 @@ async def process_ai_credits_amount(message: Message, state: FSMContext):
             pass
     else:
         await message.answer("❌ Failed to add AI credits.", reply_markup=admin_menu_kb())
+
+
+# ── APK CHANNEL MANAGEMENT ────────────────────────────────────────────────────
+
+@admin_router.callback_query(F.data == "admin_apk_channels")
+async def cb_admin_apk_channels(cb: CallbackQuery, state: FSMContext):
+    if not is_admin(cb.from_user.id):
+        await cb.answer("🚫 Unauthorized.", show_alert=True)
+        return
+    await state.clear()
+    channels = await db.get_source_channels()
+    from aiogram.types import InlineKeyboardButton
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    if channels:
+        for ch in channels:
+            status = "🟢" if ch["is_active"] else "🔴"
+            builder.row(InlineKeyboardButton(
+                text=f"{status} {ch['channel_name']} ({ch['channel_id']})",
+                callback_data=f"admin_toggle_ch:{ch['channel_id']}",
+            ))
+    builder.row(
+        InlineKeyboardButton(text="➕ Add Channel", callback_data="admin_add_apk_channel"),
+        InlineKeyboardButton(text="🎯 Set Target", callback_data="admin_set_target"),
+    )
+    builder.row(InlineKeyboardButton(text="🔙 Back", callback_data="admin_back"))
+
+    ch_list = "\n".join(
+        f"{'🟢' if c['is_active'] else '🔴'} <code>{c['channel_id']}</code> — {c['channel_name']}"
+        for c in channels
+    ) if channels else "<i>No channels configured yet.</i>"
+
+    await cb.message.edit_text(
+        f"📱 <b>APK SOURCE CHANNELS</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"<b>Monitored Channels:</b>\n{ch_list}\n\n"
+        f"🟢 Active  🔴 Paused  (tap to toggle)\n\n"
+        f"<i>Bot must be admin in source channels to receive APK posts.</i>",
+        parse_mode="HTML",
+        reply_markup=builder.as_markup(),
+    )
+    await cb.answer()
+
+
+@admin_router.callback_query(F.data.startswith("admin_toggle_ch:"))
+async def cb_admin_toggle_channel(cb: CallbackQuery):
+    if not is_admin(cb.from_user.id):
+        await cb.answer("🚫 Unauthorized.", show_alert=True)
+        return
+    channel_id = int(cb.data.split(":")[1])
+    channels = await db.get_source_channels()
+    ch = next((c for c in channels if c["channel_id"] == channel_id), None)
+    if not ch:
+        await cb.answer("Channel not found.", show_alert=True)
+        return
+    if ch["is_active"]:
+        await db.remove_source_channel(channel_id)
+        await cb.answer(f"🔴 Channel {channel_id} paused.", show_alert=True)
+    else:
+        await db.add_source_channel(channel_id, ch["channel_name"])
+        await cb.answer(f"🟢 Channel {channel_id} re-activated.", show_alert=True)
+    # Refresh the panel
+    await cb_admin_apk_channels(cb, None)
+
+
+@admin_router.callback_query(F.data == "admin_add_apk_channel")
+async def cb_admin_add_apk_channel(cb: CallbackQuery, state: FSMContext):
+    if not is_admin(cb.from_user.id):
+        await cb.answer("🚫 Unauthorized.", show_alert=True)
+        return
+    await state.set_state(AdminState.add_apk_channel)
+    await cb.message.edit_text(
+        "📱 <b>ADD SOURCE CHANNEL</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "Send the <b>channel ID</b> to monitor for APKs.\n\n"
+        "Format: <code>-1001234567890</code>\n\n"
+        "<i>💡 Make sure the bot is an admin in that channel first.</i>",
+        parse_mode="HTML",
+        reply_markup=back_kb("admin_apk_channels"),
+    )
+    await cb.answer()
+
+
+@admin_router.message(AdminState.add_apk_channel)
+async def process_add_apk_channel(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    raw = message.text.strip()
+    if not raw.lstrip("-").isdigit():
+        await message.answer(
+            "⚠️ Invalid channel ID. Must be a number like <code>-1001234567890</code>",
+            parse_mode="HTML",
+        )
+        return
+    channel_id = int(raw)
+    # Try to get channel name from Telegram
+    channel_name = "Unknown"
+    try:
+        chat = await message.bot.get_chat(channel_id)
+        channel_name = chat.title or chat.username or "Unknown"
+    except Exception:
+        pass
+    ok = await db.add_source_channel(channel_id, channel_name)
+    await state.clear()
+    if ok:
+        await message.answer(
+            f"✅ <b>Source Channel Added</b>\n\n"
+            f"📢 <b>{channel_name}</b>\n"
+            f"🆔 <code>{channel_id}</code>\n\n"
+            f"<i>Bot will now monitor this channel for APK files.</i>",
+            parse_mode="HTML",
+            reply_markup=admin_menu_kb(),
+        )
+    else:
+        await message.answer("❌ Failed to add channel.", reply_markup=admin_menu_kb())
+
+
+@admin_router.callback_query(F.data == "admin_set_target")
+async def cb_admin_set_target(cb: CallbackQuery, state: FSMContext):
+    if not is_admin(cb.from_user.id):
+        await cb.answer("🚫 Unauthorized.", show_alert=True)
+        return
+    from config import TARGET_CHANNEL_ID
+    current = TARGET_CHANNEL_ID or "Not set"
+    await state.set_state(AdminState.set_target_channel)
+    await cb.message.edit_text(
+        f"🎯 <b>SET TARGET CHANNEL</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Current: <code>{current}</code>\n\n"
+        f"Send the <b>channel ID</b> where leeched APKs should be posted.\n\n"
+        f"Format: <code>-1001234567890</code>\n\n"
+        f"<i>💡 Set <b>TARGET_CHANNEL_ID</b> env var then restart for permanent effect.</i>",
+        parse_mode="HTML",
+        reply_markup=back_kb("admin_apk_channels"),
+    )
+    await cb.answer()
+
+
+@admin_router.message(AdminState.set_target_channel)
+async def process_set_target_channel(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    raw = message.text.strip()
+    if not raw.lstrip("-").isdigit():
+        await message.answer(
+            "⚠️ Invalid channel ID. Must be a number like <code>-1001234567890</code>",
+            parse_mode="HTML",
+        )
+        return
+    channel_id = int(raw)
+    channel_name = "Unknown"
+    try:
+        chat = await message.bot.get_chat(channel_id)
+        channel_name = chat.title or chat.username or "Unknown"
+    except Exception:
+        pass
+    # Update runtime config
+    import config as _cfg
+    _cfg.TARGET_CHANNEL_ID = channel_id
+    await state.clear()
+    await message.answer(
+        f"✅ <b>Target Channel Set (runtime)</b>\n\n"
+        f"📢 <b>{channel_name}</b>\n"
+        f"🆔 <code>{channel_id}</code>\n\n"
+        f"⚠️ <i>Add <b>TARGET_CHANNEL_ID={channel_id}</b> to Secrets for persistence across restarts.</i>",
+        parse_mode="HTML",
+        reply_markup=admin_menu_kb(),
+    )
+
+
+@admin_router.callback_query(F.data == "admin_leech_stats")
+async def cb_admin_leech_stats(cb: CallbackQuery):
+    if not is_admin(cb.from_user.id):
+        await cb.answer("🚫 Unauthorized.", show_alert=True)
+        return
+    stats = await db.get_leech_stats()
+    await cb.message.edit_text(
+        f"📊 <b>APK LEECH STATISTICS</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 <b>Total APKs Leeched:</b> <code>{stats.get('total_leeched', 0)}</code>\n"
+        f"💾 <b>Total Data Served:</b> <code>{stats.get('total_mb', 0)} MB</code>\n"
+        f"📢 <b>Active Sources:</b> <code>{stats.get('active_channels', 0)}</code>\n"
+        f"🌐 <b>Unique Source Channels:</b> <code>{stats.get('unique_sources', 0)}</code>",
+        parse_mode="HTML",
+        reply_markup=back_kb("admin_apk_channels"),
+    )
+    await cb.answer()
