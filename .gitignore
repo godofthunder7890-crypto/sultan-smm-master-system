@@ -1,13 +1,41 @@
+# Python
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
-.env
-*.log
-logs/
-.DS_Store
+*.pyd
+.Python
 *.egg-info/
 dist/
 build/
-node_modules/
+*.egg
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+smm_bot/logs/
+*.log
+logs/
+
+# Replit internals
+.pythonlibs/
 .local/
-.cache/
+.upm/
+.config/
+
+# Node
+node_modules/
+.npm/
+
+# Dependencies
+.pnpm-store/
+
+# Secrets (never commit)
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
