@@ -89,6 +89,26 @@ CREATE INDEX IF NOT EXISTS idx_services_provider ON services(provider);
 CREATE INDEX IF NOT EXISTS idx_services_category ON services(category);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
+
+CREATE TABLE IF NOT EXISTS ai_conversations (
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT,
+    model TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    has_image BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_conv_user ON ai_conversations(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_conv_created ON ai_conversations(created_at);
+
+CREATE TABLE IF NOT EXISTS ai_credits (
+    user_id BIGINT PRIMARY KEY,
+    credits INT DEFAULT 30,
+    total_messages INT DEFAULT 0,
+    total_images INT DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 """
 
 
@@ -476,6 +496,125 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"get_latest_provider_balances: {e}")
             return []
+
+
+    # ── AI CREDIT METHODS ─────────────────────────────────────────────────────
+
+    async def get_ai_credits(self, user_id: int) -> int:
+        pool = await get_pool()
+        if not pool:
+            return 30
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """INSERT INTO ai_credits (user_id, credits)
+                       VALUES ($1, 30)
+                       ON CONFLICT (user_id) DO UPDATE SET user_id = EXCLUDED.user_id
+                       RETURNING credits""",
+                    user_id
+                )
+                return int(row["credits"]) if row else 30
+        except Exception as e:
+            logger.error(f"get_ai_credits error: {e}")
+            return 30
+
+    async def deduct_ai_credit(self, user_id: int, amount: int = 1) -> bool:
+        pool = await get_pool()
+        if not pool:
+            return True
+        try:
+            async with pool.acquire() as conn:
+                result = await conn.execute(
+                    """UPDATE ai_credits
+                       SET credits = credits - $1, updated_at = NOW()
+                       WHERE user_id = $2 AND credits >= $1""",
+                    amount, user_id
+                )
+                return result == "UPDATE 1"
+        except Exception as e:
+            logger.error(f"deduct_ai_credit error: {e}")
+            return False
+
+    async def add_ai_credits(self, user_id: int, amount: int) -> bool:
+        pool = await get_pool()
+        if not pool:
+            return False
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO ai_credits (user_id, credits)
+                       VALUES ($1, $2)
+                       ON CONFLICT (user_id) DO UPDATE
+                       SET credits = ai_credits.credits + $2, updated_at = NOW()""",
+                    user_id, amount
+                )
+            return True
+        except Exception as e:
+            logger.error(f"add_ai_credits error: {e}")
+            return False
+
+    async def log_ai_message(self, user_id: int, model: str, role: str,
+                              content: str, has_image: bool = False) -> None:
+        pool = await get_pool()
+        if not pool:
+            return
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO ai_conversations (user_id, model, role, content, has_image)
+                       VALUES ($1, $2, $3, $4, $5)""",
+                    user_id, model, role, content[:4000], has_image
+                )
+                if role == "user":
+                    col = "total_images" if has_image else "total_messages"
+                    await conn.execute(
+                        f"""INSERT INTO ai_credits (user_id, credits, {col})
+                           VALUES ($1, 30, 1)
+                           ON CONFLICT (user_id) DO UPDATE
+                           SET {col} = ai_credits.{col} + 1, updated_at = NOW()""",
+                        user_id
+                    )
+        except Exception as e:
+            logger.error(f"log_ai_message error: {e}")
+
+    async def get_ai_usage(self, user_id: int) -> dict:
+        pool = await get_pool()
+        if not pool:
+            return {"total_messages": 0, "total_images": 0, "credits": 30}
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT credits, total_messages, total_images FROM ai_credits WHERE user_id = $1",
+                    user_id
+                )
+                if row:
+                    return {
+                        "credits": int(row["credits"]),
+                        "total_messages": int(row["total_messages"]),
+                        "total_images": int(row["total_images"]),
+                    }
+                return {"total_messages": 0, "total_images": 0, "credits": 30}
+        except Exception as e:
+            logger.error(f"get_ai_usage error: {e}")
+            return {"total_messages": 0, "total_images": 0, "credits": 30}
+
+    async def get_ai_global_stats(self) -> dict:
+        pool = await get_pool()
+        if not pool:
+            return {}
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """SELECT
+                       COUNT(*) AS total_ai_messages,
+                       COUNT(DISTINCT user_id) AS ai_users,
+                       SUM(CASE WHEN has_image THEN 1 ELSE 0 END) AS total_images
+                       FROM ai_conversations WHERE role = 'user'"""
+                )
+                return dict(row) if row else {}
+        except Exception as e:
+            logger.error(f"get_ai_global_stats error: {e}")
+            return {}
 
 
 db = DatabaseManager()
