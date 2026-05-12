@@ -109,6 +109,26 @@ CREATE TABLE IF NOT EXISTS ai_credits (
     total_images INT DEFAULT 0,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS apk_source_channels (
+    id SERIAL PRIMARY KEY,
+    channel_id BIGINT NOT NULL UNIQUE,
+    channel_name TEXT DEFAULT 'Unknown',
+    is_active BOOLEAN DEFAULT TRUE,
+    added_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS apk_leeched (
+    id SERIAL PRIMARY KEY,
+    source_channel_id BIGINT,
+    source_message_id INT,
+    original_filename TEXT,
+    sultan_filename TEXT,
+    file_size BIGINT DEFAULT 0,
+    forwarded_message_id INT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_apk_leeched_created ON apk_leeched(created_at);
 """
 
 
@@ -597,6 +617,114 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"get_ai_usage error: {e}")
             return {"total_messages": 0, "total_images": 0, "credits": 30}
+
+    # ── APK LEECHER METHODS ───────────────────────────────────────────────────
+
+    async def get_source_channels(self) -> list:
+        pool = await get_pool()
+        if not pool:
+            return []
+        try:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT * FROM apk_source_channels ORDER BY added_at DESC"
+                )
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"get_source_channels error: {e}")
+            return []
+
+    async def add_source_channel(self, channel_id: int, channel_name: str = "Unknown") -> bool:
+        pool = await get_pool()
+        if not pool:
+            return False
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO apk_source_channels (channel_id, channel_name)
+                       VALUES ($1, $2)
+                       ON CONFLICT (channel_id) DO UPDATE
+                       SET is_active = TRUE, channel_name = EXCLUDED.channel_name""",
+                    channel_id, channel_name
+                )
+            return True
+        except Exception as e:
+            logger.error(f"add_source_channel error: {e}")
+            return False
+
+    async def remove_source_channel(self, channel_id: int) -> bool:
+        pool = await get_pool()
+        if not pool:
+            return False
+        try:
+            async with pool.acquire() as conn:
+                result = await conn.execute(
+                    "UPDATE apk_source_channels SET is_active = FALSE WHERE channel_id = $1",
+                    channel_id
+                )
+                return result == "UPDATE 1"
+        except Exception as e:
+            logger.error(f"remove_source_channel error: {e}")
+            return False
+
+    async def delete_source_channel(self, channel_id: int) -> bool:
+        pool = await get_pool()
+        if not pool:
+            return False
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM apk_source_channels WHERE channel_id = $1", channel_id
+                )
+            return True
+        except Exception as e:
+            logger.error(f"delete_source_channel error: {e}")
+            return False
+
+    async def log_leeched_apk(self, source_channel_id: int, source_message_id: int,
+                               original_filename: str, sultan_filename: str,
+                               file_size: int, forwarded_message_id: int) -> None:
+        pool = await get_pool()
+        if not pool:
+            return
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO apk_leeched
+                       (source_channel_id, source_message_id, original_filename,
+                        sultan_filename, file_size, forwarded_message_id)
+                       VALUES ($1, $2, $3, $4, $5, $6)""",
+                    source_channel_id, source_message_id, original_filename,
+                    sultan_filename, file_size, forwarded_message_id
+                )
+        except Exception as e:
+            logger.error(f"log_leeched_apk error: {e}")
+
+    async def get_leech_stats(self) -> dict:
+        pool = await get_pool()
+        if not pool:
+            return {}
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """SELECT
+                       COUNT(*) AS total_leeched,
+                       COALESCE(SUM(file_size), 0) AS total_bytes,
+                       COUNT(DISTINCT source_channel_id) AS unique_sources
+                       FROM apk_leeched"""
+                )
+                active = await conn.fetchval(
+                    "SELECT COUNT(*) FROM apk_source_channels WHERE is_active = TRUE"
+                )
+                return {
+                    "total_leeched": int(row["total_leeched"]),
+                    "total_mb": round(float(row["total_bytes"]) / 1024 / 1024, 1),
+                    "unique_sources": int(row["unique_sources"]),
+                    "active_channels": int(active),
+                }
+        except Exception as e:
+            logger.error(f"get_leech_stats error: {e}")
+            return {}
 
     async def get_ai_global_stats(self) -> dict:
         pool = await get_pool()
