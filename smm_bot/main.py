@@ -15,6 +15,7 @@ from config import BOT_TOKEN
 from database_manager import db
 from handlers.user_handlers import user_router
 from handlers.admin_handlers import admin_router
+from handlers.ai_handlers import ai_router
 from scheduler import start_scheduler
 from keep_alive import keep_alive
 
@@ -73,6 +74,7 @@ def build_dispatcher() -> Dispatcher:
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     dp.include_router(admin_router)
+    dp.include_router(ai_router)
     dp.include_router(user_router)
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
