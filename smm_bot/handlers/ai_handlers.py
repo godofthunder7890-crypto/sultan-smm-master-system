@@ -260,3 +260,27 @@ async def _process_ai_message(
             parse_mode="HTML",
             reply_markup=ai_chat_kb(model_key),
         )
+
+
+# ── AI MENU CALLBACK (from main menu 🤖 button) ───────────────────────────────
+
+@ai_router.callback_query(F.data == "ai_menu")
+async def cb_ai_menu(cb: CallbackQuery, state: FSMContext):
+    await state.clear()
+    credits = await db.get_ai_credits(cb.from_user.id)
+    await state.set_state(AIState.selecting_model)
+    await cb.message.edit_text(
+        f"🤖 <b>SULTAN AI COMMAND CENTER</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"💬 <b>Your AI Credits:</b> <code>{credits}</code>\n"
+        f"   (1 credit/text • 2 credits/image)\n\n"
+        f"<b>Available Models:</b>\n"
+        f"⚡ <b>Groq Llama</b> — Ultra-fast text responses\n"
+        f"🌌 <b>Gemini</b> — Multimodal (text + image analysis)\n"
+        f"🧠 <b>Claude</b> — Expert coding & complex logic\n"
+        f"🌊 <b>Mistral</b> — Multilingual & creative tasks\n\n"
+        f"<i>Choose your AI model below:</i>",
+        parse_mode="HTML",
+        reply_markup=ai_model_kb(),
+    )
+    await cb.answer()
