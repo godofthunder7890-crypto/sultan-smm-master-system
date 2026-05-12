@@ -12,7 +12,8 @@ from ui_templates import (
     order_status_message, deposit_pending_message,
     main_menu_kb, wallet_kb, add_funds_kb, submit_payment_kb,
     providers_kb, categories_kb, services_kb, service_detail_kb,
-    orders_kb, back_to_main_kb, back_kb, confirm_kb
+    orders_kb, back_to_main_kb, back_kb, confirm_kb,
+    apk_browse_kb, order_detail_check_kb,
 )
 from config import UPI_ID, MIN_DEPOSIT, MAX_DEPOSIT, PRICE_MULTIPLIER, TARGET_CHANNEL_ID, BOT_USERNAME
 
@@ -434,9 +435,44 @@ async def cb_order_detail(cb: CallbackQuery):
     await cb.message.edit_text(
         order_status_message(order),
         parse_mode="HTML",
-        reply_markup=back_kb("my_orders"),
+        reply_markup=order_detail_check_kb(order_id),
     )
     await cb.answer()
+
+
+@user_router.callback_query(F.data.startswith("live_status:"))
+async def cb_live_status(cb: CallbackQuery):
+    """Fetch live order status directly from SMM provider API."""
+    await cb.answer("🔄 Fetching live status...", show_alert=False)
+    order_id = int(cb.data.split(":")[1])
+    orders = await db.get_user_orders(cb.from_user.id, limit=50)
+    order = next((o for o in orders if o.get("id") == order_id), None)
+    if not order:
+        await cb.answer("Order not found.", show_alert=True)
+        return
+    provider_order_id = order.get("provider_order_id")
+    provider_key = order.get("provider")
+    refreshed = False
+    if provider_order_id and provider_key:
+        try:
+            from api_router import SMMProvider
+            provider = SMMProvider(provider_key)
+            live = await provider.get_order_status(provider_order_id)
+            if live and live.get("status"):
+                order.update(live)
+                await db.update_order_status(order_id, live.get("status"))
+                refreshed = True
+        except Exception as e:
+            logger.warning(f"Live status error for order {order_id}: {e}")
+    await cb.message.edit_text(
+        order_status_message(order),
+        parse_mode="HTML",
+        reply_markup=order_detail_check_kb(order_id),
+    )
+    if refreshed:
+        await cb.answer("✅ Live status updated!")
+    else:
+        await cb.answer("⚠️ Showing cached status")
 
 
 # ── CHECK ORDER ───────────────────────────────────────────────────────────────
@@ -499,6 +535,60 @@ async def cb_support(cb: CallbackQuery):
         f"🆔 <b>Your User ID:</b> <code>{cb.from_user.id}</code>",
         parse_mode="HTML",
         reply_markup=back_to_main_kb(),
+    )
+    await cb.answer()
+
+
+@user_router.callback_query(F.data == "apk_browse")
+async def cb_apk_browse(cb: CallbackQuery):
+    apks = await db.get_recent_leeched(limit=8)
+    await cb.message.edit_text(
+        f"📥 <b>PREMIUM APKs</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🏛️ <b>Sultan Premium Collection</b>\n"
+        f"Auto-leeched & uploaded to our channel.\n\n"
+        f"📦 <b>{len(apks)}</b> APK(s) available\n\n"
+        f"<i>Tap any APK for the download link.</i>",
+        parse_mode="HTML",
+        reply_markup=apk_browse_kb(apks),
+    )
+    await cb.answer()
+
+
+@user_router.callback_query(F.data.startswith("apk_detail:"))
+async def cb_apk_detail(cb: CallbackQuery):
+    from aiogram.types import InlineKeyboardButton
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    apk_id = int(cb.data.split(":")[1])
+    apks = await db.get_recent_leeched(limit=50)
+    apk = next((a for a in apks if a.get("id") == apk_id), None)
+    if not apk:
+        await cb.answer("APK not found.", show_alert=True)
+        return
+    name = apk.get("sultan_filename") or "Sultan_Premium.apk"
+    size_mb = (apk.get("file_size") or 0) / 1024 / 1024
+    created = str(apk.get("created_at", ""))[:10]
+    builder = InlineKeyboardBuilder()
+    if TARGET_CHANNEL_ID and apk.get("forwarded_message_id"):
+        ch = str(TARGET_CHANNEL_ID)
+        if ch.startswith("-100"):
+            msg_link = f"https://t.me/c/{ch[4:]}/{apk['forwarded_message_id']}"
+        else:
+            msg_link = f"https://t.me/{BOT_USERNAME}/{apk['forwarded_message_id']}"
+        builder.row(InlineKeyboardButton(text="⬇️ Download from Channel", url=msg_link))
+    builder.row(
+        InlineKeyboardButton(text="🔙 All APKs", callback_data="apk_browse"),
+        InlineKeyboardButton(text="🏠 Home", callback_data="main_menu"),
+    )
+    await cb.message.edit_text(
+        f"📦 <b>SULTAN PREMIUM APK</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🏷️ <b>{name}</b>\n"
+        f"📏 <b>Size:</b> <code>{size_mb:.1f} MB</code>\n"
+        f"📅 <b>Date:</b> <code>{created}</code>\n\n"
+        f"⬇️ Click below to download from our channel.",
+        parse_mode="HTML",
+        reply_markup=builder.as_markup(),
     )
     await cb.answer()
 
